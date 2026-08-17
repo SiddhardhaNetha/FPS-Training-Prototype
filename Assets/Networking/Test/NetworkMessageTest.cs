@@ -165,48 +165,55 @@ public class NetworkMessageTest : NetworkBehaviour
         ulong clientId =
             rpcParams.Receive.SenderClientId;
 
+        // Store the state received from the client.
         latestPlayerStates[clientId] =
             position;
 
+        // The server now decides what state is approved.
+        Vector3 approvedPosition =
+            latestPlayerStates[clientId];
+
         Debug.Log(
-            "SERVER STATE UPDATE | " +
+            "SERVER APPROVED STATE | " +
             "Client ID: " +
             clientId +
             " | Position: " +
-            position
+            approvedPosition
         );
 
-        SendStateReceivedClientRpc(
+        // Broadcast the server-approved state.
+        BroadcastApprovedStateClientRpc(
             clientId,
-            position
+            approvedPosition
         );
     }
 
     [Rpc(SendTo.NotServer)]
-    private void SendStateReceivedClientRpc(
+    private void BroadcastApprovedStateClientRpc(
         ulong clientId,
-        Vector3 position)
+        Vector3 approvedPosition)
     {
+        // Ignore our own state.
         if (clientId == assignedPlayerId)
             return;
 
         lastMessage =
-            "Remote Client " +
+            "Approved state | Client " +
             clientId +
-            " position: " +
-            position;
+            " | Position " +
+            approvedPosition;
 
         Debug.Log(
-            "CLIENT: Remote state received | " +
+            "CLIENT: APPROVED REMOTE STATE | " +
             "Client ID: " +
             clientId +
             " | Position: " +
-            position
+            approvedPosition
         );
 
         UpdateRemotePlayer(
             clientId,
-            position
+            approvedPosition
         );
     }
 
