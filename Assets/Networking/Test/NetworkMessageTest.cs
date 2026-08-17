@@ -1,9 +1,16 @@
 using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class NetworkMessageTest : NetworkBehaviour
 {
+    [Header("Movement Test")]
+    [SerializeField] private float moveSpeed = 3f;
+
+    [Header("Remote Player")]
+    [SerializeField] private GameObject remotePlayerVisualPrefab;
+
     private string lastMessage = "No message received.";
 
     private ulong assignedPlayerId;
@@ -13,6 +20,53 @@ public class NetworkMessageTest : NetworkBehaviour
     private readonly Dictionary<ulong, Vector3> latestPlayerStates =
         new Dictionary<ulong, Vector3>();
 
+    private readonly Dictionary<ulong, GameObject> remotePlayers =
+        new Dictionary<ulong, GameObject>();
+
+    private void Update()
+    {
+        if (!IsSpawned || !IsOwner)
+            return;
+
+        HandleLocalMovement();
+
+        currentPosition = transform.position;
+
+        if (IsClient)
+        {
+            SendPositionServerRpc(currentPosition);
+        }
+    }
+
+    private void HandleLocalMovement()
+    {
+        if (Keyboard.current == null)
+            return;
+
+        Vector2 input = Vector2.zero;
+
+        if (Keyboard.current.aKey.isPressed)
+            input.x -= 1f;
+
+        if (Keyboard.current.dKey.isPressed)
+            input.x += 1f;
+
+        if (Keyboard.current.sKey.isPressed)
+            input.y -= 1f;
+
+        if (Keyboard.current.wKey.isPressed)
+            input.y += 1f;
+
+        Vector3 movement = new Vector3(
+            input.x,
+            0f,
+            input.y
+        ).normalized;
+
+        transform.position +=
+            movement * moveSpeed * Time.deltaTime;
+    }
+
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
@@ -20,7 +74,8 @@ public class NetworkMessageTest : NetworkBehaviour
         assignedPlayerId =
             NetworkManager.Singleton.LocalClientId;
 
-        currentPosition = transform.position;
+        currentPosition =
+            transform.position;
 
         Debug.Log(
             "NETWORK SPAWNED - My Client ID: " +
@@ -62,15 +117,6 @@ public class NetworkMessageTest : NetworkBehaviour
             "Last Message: " +
             lastMessage
         );
-
-        if (GUI.Button(
-            new Rect(20, 150, 240, 50),
-            "SEND POSITION"))
-        {
-            SendPositionServerRpc(
-                currentPosition
-            );
-        }
     }
 
     [Rpc(SendTo.Server)]
@@ -130,48 +176,95 @@ public class NetworkMessageTest : NetworkBehaviour
             position
         );
 
-        Debug.Log(
-            "SERVER STORED STATES: " +
-            latestPlayerStates.Count
-        );
-
-        foreach (
-            KeyValuePair<ulong, Vector3> state
-            in latestPlayerStates)
-        {
-            Debug.Log(
-                "  Client " +
-                state.Key +
-                " → Position " +
-                state.Value
-            );
-        }
-
         SendStateReceivedClientRpc(
             clientId,
-            position,
-            RpcTarget.Single(
-                clientId,
-                RpcTargetUse.Temp
-            )
+            position
         );
     }
 
-    [Rpc(SendTo.SpecifiedInParams)]
+    [Rpc(SendTo.NotServer)]
     private void SendStateReceivedClientRpc(
         ulong clientId,
-        Vector3 position,
-        RpcParams rpcParams = default)
+        Vector3 position)
     {
+        if (clientId == assignedPlayerId)
+            return;
+
         lastMessage =
-            "Server received state for Client " +
+            "Remote Client " +
             clientId +
-            " at " +
+            " position: " +
             position;
 
         Debug.Log(
-            "CLIENT: Server confirmed position = " +
+            "CLIENT: Remote state received | " +
+            "Client ID: " +
+            clientId +
+            " | Position: " +
             position
         );
+
+        UpdateRemotePlayer(
+            clientId,
+            position
+        );
+    }
+
+    private void UpdateRemotePlayer(
+        ulong clientId,
+        Vector3 position)
+    {
+        if (remotePlayerVisualPrefab == null)
+        {
+            Debug.LogError(
+                "Remote Player Visual Prefab is not assigned!"
+            );
+
+            return;
+        }
+
+        if (!remotePlayers.TryGetValue(
+            clientId,
+            out GameObject remotePlayer))
+        {
+            remotePlayer =
+                Instantiate(
+                    remotePlayerVisualPrefab,
+                    position,
+                    Quaternion.identity
+                );
+
+            remotePlayers.Add(
+                clientId,
+                remotePlayer
+            );
+
+            Debug.Log(
+                "Created remote player visual for Client " +
+                clientId
+            );
+        }
+        else
+        {
+            remotePlayer.transform.position =
+                position;
+        }
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        foreach (
+            GameObject remotePlayer
+            in remotePlayers.Values)
+        {
+            if (remotePlayer != null)
+            {
+                Destroy(remotePlayer);
+            }
+        }
+
+        remotePlayers.Clear();
+
+        base.OnNetworkDespawn();
     }
 }

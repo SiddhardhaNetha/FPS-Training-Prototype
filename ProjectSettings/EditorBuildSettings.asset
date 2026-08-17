@@ -21,7 +21,7 @@ EditorBuildSettings:
     path: Assets/Scenes/Settings.unity
     guid: b3ed5dd212c7ba040b134a611ce4f979
   - enabled: 1
-    path: Assets/Networking/Test/NetworkTest.unity
+    path: Assets/Networking/Test/Test Scene/NetworkTest.unity
     guid: b239526103b3e2a44b337f77fafa0263
   m_configObjects:
     com.unity.dt.app-ui: {fileID: 11400000, guid: 1b1c20d82303e4b5781c3ef50ac1449f, type: 2}
