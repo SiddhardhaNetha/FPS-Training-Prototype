@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -8,6 +9,9 @@ public class NetworkMessageTest : NetworkBehaviour
     private ulong assignedPlayerId;
 
     private Vector3 currentPosition;
+
+    private readonly Dictionary<ulong, Vector3> latestPlayerStates =
+        new Dictionary<ulong, Vector3>();
 
     public override void OnNetworkSpawn()
     {
@@ -115,13 +119,33 @@ public class NetworkMessageTest : NetworkBehaviour
         ulong clientId =
             rpcParams.Receive.SenderClientId;
 
+        latestPlayerStates[clientId] =
+            position;
+
         Debug.Log(
-            "SERVER RECEIVED STATE | " +
+            "SERVER STATE UPDATE | " +
             "Client ID: " +
             clientId +
             " | Position: " +
             position
         );
+
+        Debug.Log(
+            "SERVER STORED STATES: " +
+            latestPlayerStates.Count
+        );
+
+        foreach (
+            KeyValuePair<ulong, Vector3> state
+            in latestPlayerStates)
+        {
+            Debug.Log(
+                "  Client " +
+                state.Key +
+                " → Position " +
+                state.Value
+            );
+        }
 
         SendStateReceivedClientRpc(
             clientId,
