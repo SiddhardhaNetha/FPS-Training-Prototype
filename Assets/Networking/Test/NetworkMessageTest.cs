@@ -23,6 +23,10 @@ public class NetworkMessageTest : NetworkBehaviour
     private readonly Dictionary<ulong, GameObject> remotePlayers =
         new Dictionary<ulong, GameObject>();
 
+    // SERVER-SIDE PLAYER LIST
+    private readonly HashSet<ulong> connectedPlayers =
+        new HashSet<ulong>();
+
     private void Update()
     {
         if (!IsSpawned || !IsOwner)
@@ -82,9 +86,67 @@ public class NetworkMessageTest : NetworkBehaviour
             assignedPlayerId
         );
 
+        if (IsServer)
+        {
+            RegisterPlayerServer(
+                NetworkManager.Singleton.LocalClientId
+            );
+
+            NetworkManager.Singleton.OnClientConnectedCallback +=
+                OnClientConnected;
+
+            NetworkManager.Singleton.OnClientDisconnectCallback +=
+                OnClientDisconnected;
+        }
+
         if (IsClient)
         {
-            RequestPlayerIdServerRpc();
+            RequestPlayerRegistrationServerRpc();
+        }
+    }
+
+    private void OnClientConnected(ulong clientId)
+    {
+        RegisterPlayerServer(clientId);
+
+        Debug.Log(
+            "SERVER: PLAYER JOINED | Client ID: " +
+            clientId
+        );
+    }
+
+    private void OnClientDisconnected(ulong clientId)
+    {
+        connectedPlayers.Remove(clientId);
+
+        latestPlayerStates.Remove(clientId);
+
+        Debug.Log(
+            "SERVER: PLAYER LEFT | Client ID: " +
+            clientId
+        );
+
+        Debug.Log(
+            "SERVER PLAYER COUNT: " +
+            connectedPlayers.Count
+        );
+
+        RemoveRemotePlayerClientRpc(clientId);
+    }
+
+    private void RegisterPlayerServer(ulong clientId)
+    {
+        if (connectedPlayers.Add(clientId))
+        {
+            Debug.Log(
+                "SERVER: PLAYER REGISTERED | Client ID: " +
+                clientId
+            );
+
+            Debug.Log(
+                "SERVER PLAYER COUNT: " +
+                connectedPlayers.Count
+            );
         }
     }
 
@@ -117,19 +179,25 @@ public class NetworkMessageTest : NetworkBehaviour
             "Last Message: " +
             lastMessage
         );
+
+        if (IsServer)
+        {
+            GUI.Label(
+                new Rect(20, 140, 700, 30),
+                "Server Player Count: " +
+                connectedPlayers.Count
+            );
+        }
     }
 
     [Rpc(SendTo.Server)]
-    private void RequestPlayerIdServerRpc(
+    private void RequestPlayerRegistrationServerRpc(
         RpcParams rpcParams = default)
     {
         ulong clientId =
             rpcParams.Receive.SenderClientId;
 
-        Debug.Log(
-            "SERVER: Client connected with ID: " +
-            clientId
-        );
+        RegisterPlayerServer(clientId);
 
         SendPlayerIdClientRpc(
             clientId,
@@ -165,11 +233,9 @@ public class NetworkMessageTest : NetworkBehaviour
         ulong clientId =
             rpcParams.Receive.SenderClientId;
 
-        // Store the state received from the client.
         latestPlayerStates[clientId] =
             position;
 
-        // The server now decides what state is approved.
         Vector3 approvedPosition =
             latestPlayerStates[clientId];
 
@@ -181,7 +247,6 @@ public class NetworkMessageTest : NetworkBehaviour
             approvedPosition
         );
 
-        // Broadcast the server-approved state.
         BroadcastApprovedStateClientRpc(
             clientId,
             approvedPosition
@@ -193,7 +258,6 @@ public class NetworkMessageTest : NetworkBehaviour
         ulong clientId,
         Vector3 approvedPosition)
     {
-        // Ignore our own state.
         if (clientId == assignedPlayerId)
             return;
 
@@ -202,14 +266,6 @@ public class NetworkMessageTest : NetworkBehaviour
             clientId +
             " | Position " +
             approvedPosition;
-
-        Debug.Log(
-            "CLIENT: APPROVED REMOTE STATE | " +
-            "Client ID: " +
-            clientId +
-            " | Position: " +
-            approvedPosition
-        );
 
         UpdateRemotePlayer(
             clientId,
@@ -258,8 +314,40 @@ public class NetworkMessageTest : NetworkBehaviour
         }
     }
 
+    [Rpc(SendTo.NotServer)]
+    private void RemoveRemotePlayerClientRpc(
+        ulong clientId)
+    {
+        if (remotePlayers.TryGetValue(
+            clientId,
+            out GameObject remotePlayer))
+        {
+            if (remotePlayer != null)
+            {
+                Destroy(remotePlayer);
+            }
+
+            remotePlayers.Remove(clientId);
+
+            Debug.Log(
+                "CLIENT: Removed remote player visual for Client " +
+                clientId
+            );
+        }
+    }
+
     public override void OnNetworkDespawn()
     {
+        if (IsServer &&
+            NetworkManager.Singleton != null)
+        {
+            NetworkManager.Singleton.OnClientConnectedCallback -=
+                OnClientConnected;
+
+            NetworkManager.Singleton.OnClientDisconnectCallback -=
+                OnClientDisconnected;
+        }
+
         foreach (
             GameObject remotePlayer
             in remotePlayers.Values)
